@@ -1,26 +1,29 @@
 package okreplay;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.EmptyStackException;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Stack;
 
 import static java.util.Collections.unmodifiableList;
 import static okreplay.Util.VIA;
 
 /**
- * Represents a set of recorded HTTP interactions that can be played back or
+ * Represents a set of recorded HTTP stackedInteractions that can be played back or
  * appended to.
  */
 @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
 abstract class MemoryTape implements Tape {
   private String name;
-  private List<YamlRecordedInteraction> interactions = new ArrayList<>();
+  private List<YamlRecordedInteraction> interactions= new ArrayList<>();
+  private LinkedHashMap<Request, Stack<YamlRecordedInteraction>> stackedInteractions = new LinkedHashMap<>();
   private transient TapeMode mode = OkReplayConfig.DEFAULT_MODE;
   private transient MatchRule matchRule = OkReplayConfig.DEFAULT_MATCH_RULE;
-  private final transient AtomicInteger orderedIndex = new AtomicInteger();
 
-  @Override public String getName() {
+    @Override public String getName() {
     return name;
   }
 
@@ -57,61 +60,102 @@ abstract class MemoryTape implements Tape {
   }
 
   @Override public int size() {
-    return interactions.size();
+      return interactions.size();
   }
 
   public List<YamlRecordedInteraction> getInteractions() {
-    return unmodifiableList(interactions);
+      return unmodifiableList(interactions);
   }
 
   public void setInteractions(List<YamlRecordedInteraction> interactions) {
-    this.interactions = new ArrayList<>(interactions);
+      for (YamlRecordedInteraction interaction : interactions) {
+          int position = findMatch(interaction.toImmutable().request());
+
+          if (position >= 0) {
+              Request key = getRequestForPosition(position);
+              if (mode.isSequential()) {
+                  Stack<YamlRecordedInteraction> stack = this.stackedInteractions.get(key);
+                  stack.push(interaction);
+              } else {
+                  Stack<YamlRecordedInteraction> stack = new Stack<>();
+                  stack.push(interaction);
+                  this.stackedInteractions.put(key, stack);
+              }
+          } else {
+              Stack<YamlRecordedInteraction> stack = new Stack<>();
+              stack.push(interaction);
+              this.stackedInteractions.put(interaction.toImmutable().request(), stack);
+          }
+      }
   }
 
   @Override public boolean seek(Request request) {
+    if(stackedInteractions.isEmpty()){
+      processInteractions();
+    }
+
     if (isSequential()) {
       try {
-        // TODO: it's a complete waste of time using an AtomicInteger when this method is called
-        // before play in a non-transactional way
-        Integer index = orderedIndex.get();
-        RecordedInteraction interaction = interactions.get(index).toImmutable();
-        Request nextRequest = interaction == null ? null : interaction.request();
-        return nextRequest != null && matchRule.isMatch(request, nextRequest);
+        Integer index = findMatch2(request);
+        return !stackedInteractions.get(getRequestForPosition(index)).empty();
       } catch (IndexOutOfBoundsException e) {
         throw new NonWritableTapeException();
       }
     } else {
-      return findMatch(request) >= 0;
+      return findMatch2(request) >= 0;
+    }
+  }
+
+  private void processInteractions() {
+    for (YamlRecordedInteraction interaction : interactions) {
+      int position = findMatch2(interaction.toImmutable().request());
+
+      if(position >= 0){
+        Request key = getRequestForPosition(position);
+        if(mode.isSequential()){
+          Stack<YamlRecordedInteraction> stack = stackedInteractions.get(key);
+          stack.push(interaction);
+        }else{
+          Stack<YamlRecordedInteraction> stack = new Stack<>();
+          stack.push(interaction);
+          stackedInteractions.put(key, stack);
+        }
+      }else{
+        Stack<YamlRecordedInteraction> stack = new Stack<>();
+        stack.push(interaction);
+        stackedInteractions.put(interaction.toImmutable().request(), stack);
+      }
+    }
+
+    for (Request request : stackedInteractions.keySet()) {
+      Collections.reverse(stackedInteractions.get(request));
     }
   }
 
   @Override public Response play(final Request request) {
+    if(stackedInteractions.isEmpty()){
+      processInteractions();
+    }
+
     if (!mode.isReadable()) {
       throw new IllegalStateException("the tape is not readable");
     }
 
-    if (mode.isSequential()) {
-      Integer nextIndex = orderedIndex.getAndIncrement();
-      RecordedInteraction nextInteraction = interactions.get(nextIndex).toImmutable();
-      if (nextInteraction == null) {
-        throw new IllegalStateException(String.format("No recording found at position %s",
-            nextIndex));
-      }
-
-      if (!matchRule.isMatch(request, nextInteraction.request())) {
-        throw new IllegalStateException(String.format("Request %s does not match recorded " +
-            "request" + " %s", stringify(request), stringify(nextInteraction.request())));
-      }
-
-      return nextInteraction.response();
-    } else {
-      int position = findMatch(request);
+    int position = findMatch2(request);
       if (position < 0) {
-        throw new IllegalStateException("no matching recording found");
+          throw new IllegalStateException("no matching recording found");
       } else {
-        return interactions.get(position).toImmutable().response();
+          if (mode.isSequential()) {
+              try {
+                  YamlRecordedInteraction pop = stackedInteractions.get(getRequestForPosition(position)).pop();
+                  return pop.toImmutable().response();
+              }catch (EmptyStackException e){
+                  throw new IndexOutOfBoundsException("no more recorded response for that request");
+              }
+          } else {
+              return stackedInteractions.get(getRequestForPosition(position)).peek().toImmutable().response();
+          }
       }
-    }
   }
 
   private String stringify(Request request) {
@@ -153,6 +197,14 @@ abstract class MemoryTape implements Tape {
     });
   }
 
+  private synchronized int findMatch2(final Request request) {
+    return Util.indexOf(stackedInteractions.keySet().iterator(), new Predicate<Request>() {
+      @Override public boolean apply(Request input) {
+        return matchRule.isMatch(request, input);
+      }
+    });
+  }
+
   private Request recordRequest(Request request) {
     return request.newBuilder()
         .removeHeader(VIA)
@@ -164,5 +216,9 @@ abstract class MemoryTape implements Tape {
         .removeHeader(VIA)
         .removeHeader(Headers.X_OKREPLAY)
         .build();
+  }
+
+  private Request getRequestForPosition(int o) {
+        return (Request) stackedInteractions.keySet().toArray()[o];
   }
 }
