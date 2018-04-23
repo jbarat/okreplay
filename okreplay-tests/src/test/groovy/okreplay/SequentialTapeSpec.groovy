@@ -103,4 +103,28 @@ class SequentialTapeSpec extends Specification {
     where:
     url = "http://freeside.co/thing/1"
   }
+  
+  @OkReplay(tape = "rest conversation tape", mode = READ_SEQUENTIAL)
+  void "same requests out of sequence are played"() {
+    given: "a tape in read-sequential mode"
+    def tape = tapeLoader.loadTape("rest conversation tape")
+    tape.mode = READ_SEQUENTIAL
+
+    and: "the first interaction is played back"
+    def response1 = tape.play(request)
+
+    when: "another request is made out of the expected sequence"
+    def response2 = tape.play(request)
+
+    then: "the first interaction response is played"
+    response1.bodyAsText() == "{}"
+
+    and: "the second interaction, out of expected sequence, is played"
+    response2.bodyAsText() == "{\"name\":\"foo\"}"
+
+    where:
+    request = new RecordedRequest.Builder()
+            .url("http://freeside.co/thing/1")
+            .build()
+  }
 }
