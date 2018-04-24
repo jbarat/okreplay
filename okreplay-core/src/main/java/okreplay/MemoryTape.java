@@ -67,7 +67,7 @@ abstract class MemoryTape implements Tape {
       return unmodifiableList(interactions);
   }
 
-  public void setInteractions(List<YamlRecordedInteraction> interactions) {
+  public synchronized void setInteractions(List<YamlRecordedInteraction> interactions) {
       for (YamlRecordedInteraction interaction : interactions) {
           int position = findMatch(interaction.toImmutable().request());
 
@@ -89,7 +89,7 @@ abstract class MemoryTape implements Tape {
       }
   }
 
-  @Override public boolean seek(Request request) {
+  @Override public synchronized boolean seek(Request request) {
     if(stackedInteractions.isEmpty()){
       processInteractions();
     }
@@ -106,7 +106,7 @@ abstract class MemoryTape implements Tape {
     }
   }
 
-  private void processInteractions() {
+  private synchronized void processInteractions() {
     for (YamlRecordedInteraction interaction : interactions) {
       int position = findMatch2(interaction.toImmutable().request());
 
@@ -132,7 +132,7 @@ abstract class MemoryTape implements Tape {
     }
   }
 
-  @Override public Response play(final Request request) {
+  @Override public synchronized Response play(final Request request) {
     if(stackedInteractions.isEmpty()){
       processInteractions();
     }
