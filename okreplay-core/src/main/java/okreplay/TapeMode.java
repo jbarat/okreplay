@@ -3,7 +3,7 @@ package okreplay;
 public enum TapeMode {
   UNDEFINED(false, false, false), READ_WRITE(true, true, false), READ_ONLY(true, false, false),
   READ_SEQUENTIAL(true, false, true), WRITE_ONLY(false, true, false), WRITE_SEQUENTIAL(false,
-      true, true);
+      true, true), READ_WRITE_SEQUENTIAL(true, true, true);
 
   private final boolean readable;
   private final boolean writable;
