@@ -99,7 +99,7 @@ abstract class MemoryTape implements Tape {
         Integer index = findMatch2(request);
         return !stackedInteractions.get(getRequestForPosition(index)).empty();
       } catch (IndexOutOfBoundsException e) {
-        throw new NonWritableTapeException();
+        throw new IndexOutOfBoundsException("No matching found for request: " + request.url());
       }
     } else {
       return findMatch2(request) >= 0;
