@@ -147,9 +147,16 @@ abstract class MemoryTape implements Tape {
       } else {
           if (mode.isSequential()) {
               try {
-                  YamlRecordedInteraction pop = stackedInteractions.get(getRequestForPosition(position)).pop();
-                  return pop.toImmutable().response();
-              }catch (EmptyStackException e){
+                  Stack<YamlRecordedInteraction> recordedInteractionStack =
+                          stackedInteractions.get(getRequestForPosition(position));
+                  YamlRecordedInteraction recordedInteraction;
+                  if (recordedInteractionStack.size() > 1) {
+                      recordedInteraction = recordedInteractionStack.pop();
+                  } else {
+                      recordedInteraction = recordedInteractionStack.peek();
+                  }
+                  return recordedInteraction.toImmutable().response();
+              } catch (EmptyStackException e) {
                   throw new IndexOutOfBoundsException("no more recorded response for that request");
               }
           } else {
