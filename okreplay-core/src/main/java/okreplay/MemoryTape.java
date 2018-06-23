@@ -155,13 +155,15 @@ abstract class MemoryTape implements Tape {
               YamlRecordedInteraction recordedInteraction;
               int stackSize = recordedInteractionStack.size();
               if (stackSize > 1) {
-                  LOG.info("Stack size: " + stackSize+ ",popping");
-                  recordedInteraction = recordedInteractionStack.pop();
+                  throw new IllegalStateException("popping");
+//                  LOG.info("Stack size: " + stackSize+ ",popping");
+//                  recordedInteraction = recordedInteractionStack.pop();
               } else {
-                  LOG.info("Stack size: " + stackSize+ ",peeking");
-                  recordedInteraction = recordedInteractionStack.peek();
+                  throw new IllegalStateException("peeking");
+//                  LOG.info("Stack size: " + stackSize+ ",peeking");
+//                  recordedInteraction = recordedInteractionStack.peek();
               }
-              return recordedInteraction.toImmutable().response();
+//              return recordedInteraction.toImmutable().response();
           } else {
               return stackedInteractions.get(getRequestForPosition(position)).peek().toImmutable().response();
           }
