@@ -3,10 +3,10 @@ package okreplay;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
-import java.util.EmptyStackException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Stack;
+import java.util.logging.Logger;
 
 import static java.util.Collections.unmodifiableList;
 import static okreplay.Util.VIA;
@@ -17,11 +17,15 @@ import static okreplay.Util.VIA;
  */
 @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
 abstract class MemoryTape implements Tape {
+
+  private static final Logger LOG = Logger.getLogger(MemoryTape.class.getName());
+
   private String name;
-  private List<YamlRecordedInteraction> interactions= new ArrayList<>();
+  private List<YamlRecordedInteraction> interactions = new ArrayList<>();
   private LinkedHashMap<Request, Stack<YamlRecordedInteraction>> stackedInteractions = new LinkedHashMap<>();
   private transient TapeMode mode = OkReplayConfig.DEFAULT_MODE;
   private transient MatchRule matchRule = OkReplayConfig.DEFAULT_MATCH_RULE;
+
 
     @Override public String getName() {
     return name;
@@ -90,7 +94,7 @@ abstract class MemoryTape implements Tape {
   }
 
   @Override public synchronized boolean seek(Request request) {
-    if(stackedInteractions.isEmpty()){
+      if(stackedInteractions.isEmpty()){
       processInteractions();
     }
 
@@ -149,9 +153,12 @@ abstract class MemoryTape implements Tape {
               Stack<YamlRecordedInteraction> recordedInteractionStack =
                       stackedInteractions.get(getRequestForPosition(position));
               YamlRecordedInteraction recordedInteraction;
-              if (recordedInteractionStack.size() > 1) {
+              int stackSize = recordedInteractionStack.size();
+              if (stackSize > 1) {
+                  LOG.info("Stack size: " + stackSize+ ",popping");
                   recordedInteraction = recordedInteractionStack.pop();
               } else {
+                  LOG.info("Stack size: " + stackSize+ ",peeking");
                   recordedInteraction = recordedInteractionStack.peek();
               }
               return recordedInteraction.toImmutable().response();
@@ -221,7 +228,7 @@ abstract class MemoryTape implements Tape {
         .build();
   }
 
-  private Request getRequestForPosition(int o) {
-        return (Request) stackedInteractions.keySet().toArray()[o];
+  private Request getRequestForPosition(int position) {
+        return (Request) stackedInteractions.keySet().toArray()[position];
   }
 }
